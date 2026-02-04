@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeadFlow CRM - Complete Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-gradient { background: linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%); }
+        .ai-gradient { background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%); }
+        .green-gradient { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .coach-card { border-left: 4px solid #8b5cf6; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+        .card-hover { transition: all 0.2s ease; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .modal-overlay { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // ============================================================
+        // SUPABASE
+        // ============================================================
+        const SUPABASE_URL = 'https://fxmclnvdimbnkuzkdnye.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ltlJqdllcZXZ87FU8JiMcA_c1fUrhRO';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // ============================================================
+        // CONSTANTS
+        // ============================================================
+        const STATES = ['TX', 'OK', 'LA', 'NM', 'CA', 'FL', 'GA', 'NC', 'AZ', 'CO', 'OH', 'PA', 'IL', 'NY'];
+        
+        const INDUSTRIES = [
+            'Construction', 'Trucking', 'Oilfield', 'Electrical', 'Plumbing', 
+            'Restaurant', 'Medical', 'Landscaping', 'Manufacturing', 'Cleaning',
+            'Auto Services', 'Staffing', 'Warehouse', 'Retail', 'Wholesale'
+        ];
+        
+        const SIGNAL_TYPES = [
+            { id: 'new_formation', name: 'New Business Formation', icon: 'fa-building' },
+            { id: 'new_dot', name: 'New DOT Authority', icon: 'fa-truck' },
+            { id: 'osha_violation', name: 'OSHA Violation', icon: 'fa-exclamation-triangle' },
+            { id: 'high_emod', name: 'High E-Mod Factor', icon: 'fa-chart-line' },
+            { id: 'ma_activity', name: 'M&A Activity', icon: 'fa-handshake' },
+            { id: 'foreign_registration', name: 'Foreign Registration', icon: 'fa-globe' },
+            { id: 'first_permit', name: 'First-Time Permit', icon: 'fa-file-alt' },
+        ];
+
+        const COVERAGE_TYPES = [
+            'General Liability', 'Workers Comp', 'Commercial Auto', 'Umbrella',
+            'Property', 'Professional Liability', 'Cyber', 'D&O', 'EPLI',
+            'Builders Risk', 'Motor Truck Cargo', 'Pollution', 'Equipment'
+        ];
+
+        const PIPELINE_STAGES = [
+            { id: 'new', name: 'New', color: 'blue' },
+            { id: 'contacted', name: 'Contacted', color: 'yellow' },
+            { id: 'quoted', name: 'Quoted', color: 'purple' },
+            { id: 'negotiating', name: 'Negotiating', color: 'orange' },
+            { id: 'won', name: 'Won', color: 'green' },
+            { id: 'lost', name: 'Lost', color: 'gray' },
+        ];
+
+        const AI_COACHING = {
+            'likely_uninsured': {
+                opener: "Congrats on the new venture! Most new businesses get crushed on insurance quotes because carriers see them as unknown risks.",
+                angle: "Position yourself as the specialist who works with new businesses and can get competitive rates.",
+                timing: "URGENT - Call within 7 days of formation. They need coverage now.",
+                objections: {
+                    "Already have coverage": "Great you moved fast! Did your agent explain the audit process? New businesses often get hit with surprise audits.",
+                    "Too expensive": "Rates for new businesses vary wildly. I work with 15+ markets. Can I run a comparison?",
+                    "Not interested": "No problem. What coverage did you end up with? Want to make sure you're not missing anything."
+                }
+            },
+            'coverage_gap': {
+                opener: "I came across your company while doing research. I help companies in situations like yours navigate insurance challenges.",
+                angle: "Position yourself as the expert who finds solutions when others can't.",
+                timing: "Call within 30 days. They may not realize the full impact yet.",
+                objections: {
+                    "Our broker handles it": "Good. Have they run a full analysis? I can do a free review.",
+                    "We're dealing with it": "Smart. I help companies build narratives that keep carriers from running.",
+                    "Not interested": "If your carrier non-renews, call me - I specialize in hard-to-place risks."
+                }
+            }
+        };
+
+        // ============================================================
+        // LEAD GENERATOR
+        // ============================================================
+        const generateLeads = (settings, count = 50) => {
+            const { states, industries, signalTypes } = settings;
+            const leads = [];
+            
+            const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore'];
+            const adjectives = ['Premier', 'Elite', 'Professional', 'Advanced', 'Quality', 'Superior', 'First Choice', 'Reliable', 'Texas', 'Lone Star'];
+            
+            const cities = {
+                'TX': ['Houston', 'Dallas', 'San Antonio', 'Austin', 'Fort Worth', 'Midland', 'Odessa', 'El Paso', 'Lubbock', 'Irving', 'Plano'],
+                'OK': ['Oklahoma City', 'Tulsa', 'Norman', 'Broken Arrow', 'Edmond'],
+                'LA': ['New Orleans', 'Baton Rouge', 'Shreveport', 'Lafayette', 'Lake Charles'],
+                'NM': ['Albuquerque', 'Santa Fe', 'Las Cruces', 'Roswell', 'Farmington'],
+                'CA': ['Los Angeles', 'San Francisco', 'San Diego', 'Sacramento', 'Fresno'],
+                'FL': ['Miami', 'Tampa', 'Orlando', 'Jacksonville', 'Fort Lauderdale'],
+            };
+            
+            const industryPatterns = {
+                'Construction': ['{adj} Construction LLC', '{last} Builders Inc', '{city} General Contractors'],
+                'Trucking': ['{last} Trucking LLC', '{city} Freight Inc', '{adj} Transport Services'],
+                'Oilfield': ['{city} Oilfield Services', '{last} Energy LLC', 'Permian {last} Services'],
+                'Electrical': ['{last} Electric LLC', '{city} Electrical Services', '{adj} Electric Inc'],
+                'Plumbing': ['{last} Plumbing LLC', '{city} Plumbing & HVAC', '{adj} Mechanical'],
+                'Restaurant': ['{last} Restaurant Group', 'The {last} Kitchen', '{city} Dining LLC'],
+                'Medical': ['{city} Medical Group PLLC', '{last} Healthcare LLC', '{adj} Medical Services'],
+                'Landscaping': ['{last} Landscaping LLC', '{city} Lawn Care', '{adj} Landscape Design'],
+                'Manufacturing': ['{city} Fabrication LLC', '{last} Manufacturing', '{adj} Machine Works'],
+                'Cleaning': ['{last} Cleaning Services', '{city} Janitorial LLC', '{adj} Commercial Cleaning'],
+            };
+            
+            const signalDetails = {
+                'new_formation': (company, date) => `New business formed ${date}. TX SOS File #0804${Math.floor(Math.random() * 100000)}.`,
+                'new_dot': (company, date) => `DOT authority granted ${date}. USDOT #${Math.floor(Math.random() * 9000000) + 1000000}. ${Math.floor(Math.random() * 20) + 5} power units.`,
+                'osha_violation': (company, date) => `OSHA citation issued ${date}. Penalty: $${Math.floor(Math.random() * 50000) + 10000}. Violation type: Serious.`,
+                'high_emod': (company, date) => `E-Mod factor: ${(Math.random() * 0.8 + 1.2).toFixed(2)}. ${Math.floor(Math.random() * 10) + 3} claims in 3 years.`,
+                'ma_activity': (company, date) => `Acquisition announced ${date}. Deal value: $${Math.floor(Math.random() * 50) + 5}M.`,
+                'foreign_registration': (company, date) => `Foreign entity registered ${date}. Home state: DE. Expanding operations.`,
+                'first_permit': (company, date) => `First building permit filed ${date}. Project value: $${Math.floor(Math.random() * 900) + 100}K.`,
+            };
+
+            for (let i = 0; i < count; i++) {
+                const state = states[Math.floor(Math.random() * states.length)];
+                const industry = industries[Math.floor(Math.random() * industries.length)];
+                const signalType = signalTypes[Math.floor(Math.random() * signalTypes.length)];
+                const city = (cities[state] || cities['TX'])[Math.floor(Math.random() * (cities[state] || cities['TX']).length)];
+                const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+                const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+                
+                const patterns = industryPatterns[industry] || industryPatterns['Construction'];
+                const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+                const companyName = pattern.replace('{last}', lastName).replace('{city}', city).replace('{adj}', adj).toUpperCase();
+                
+                const daysAgo = Math.floor(Math.random() * 7);
+                const signalDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                
+                const score = Math.floor(Math.random() * 35) + 65;
+                const priority = score >= 85 ? 'HIGH' : score >= 70 ? 'MEDIUM' : 'LOW';
+                const leadType = ['new_formation', 'new_dot', 'first_permit', 'foreign_registration'].includes(signalType) ? 'likely_uninsured' : 'coverage_gap';
+                
+                leads.push({
+                    company_name: companyName,
+                    industry: industry,
+                    city: city,
+                    state: state,
+                    zip: String(Math.floor(Math.random() * 90000) + 10000),
+                    lead_type: leadType,
+                    priority: priority,
+                    score: score,
+                    source: 'leadflow',
+                    source_id: `LF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    signal_date: signalDate,
+                    employees_estimated: ['1-5', '5-10', '10-25', '25-50'][Math.floor(Math.random() * 4)],
+                    signal_type: signalType,
+                    signal_detail: signalDetails[signalType] ? signalDetails[signalType](companyName, signalDate) : `Signal detected ${signalDate}`,
+                });
+            }
+            
+            return leads;
+        };
+
+        // ============================================================
+        // MAIN APP
+        // ============================================================
+        const App = () => {
+            // State
+            const [view, setView] = useState('dashboard');
+            const [loading, setLoading] = useState(true);
+            const [leads, setLeads] = useState([]);
+            const [accounts, setAccounts] = useState([]);
+            const [policies, setPolicies] = useState([]);
+            const [contacts, setContacts] = useState([]);
+            const [activities, setActivities] = useState([]);
+            const [selectedItem, setSelectedItem] = useState(null);
+            const [showPanel, setShowPanel] = useState(false);
+            const [panelType, setPanelType] = useState('lead');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
+            const [showConvertModal, setShowConvertModal] = useState(false);
+            const [generating, setGenerating] = useState(false);
+            
+            // Lead gen settings
+            const [settings, setSettings] = useState({
+                states: ['TX'],
+                industries: ['Construction', 'Trucking', 'Oilfield'],
+                signalTypes: ['new_formation', 'new_dot', 'osha_violation'],
+                leadsPerBatch: 50
+            });
+
+            // Fetch data
+            useEffect(() => {
+                fetchAllData();
+            }, []);
+
+            const fetchAllData = async () => {
+                setLoading(true);
+                await Promise.all([
+                    fetchLeads(),
+                    fetchAccounts(),
+                    fetchPolicies(),
+                    fetchContacts(),
+                    fetchActivities()
+                ]);
+                setLoading(false);
+            };
+
+            const fetchLeads = async () => {
+                const { data } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
+                setLeads(data || []);
+            };
+
+            const fetchAccounts = async () => {
+                const { data } = await supabase.from('accounts').select('*').order('created_at', { ascending: false });
+                setAccounts(data || []);
+            };
+
+            const fetchPolicies = async () => {
+                const { data } = await supabase.from('policies').select('*').order('created_at', { ascending: false });
+                setPolicies(data || []);
+            };
+
+            const fetchContacts = async () => {
+                const { data } = await supabase.from('contacts').select('*').order('created_at', { ascending: false });
+                setContacts(data || []);
+            };
+
+            const fetchActivities = async () => {
+                const { data } = await supabase.from('activities').select('*').order('created_at', { ascending: false });
+                setActivities(data || []);
+            };
+
+            // Generate leads
+            const handleGenerateLeads = async () => {
+                setGenerating(true);
+                const newLeads = generateLeads(settings, settings.leadsPerBatch);
+                
+                let inserted = 0;
+                for (const lead of newLeads) {
+                    const { error } = await supabase.from('leads').insert({
+                        company_name: lead.company_name,
+                        industry: lead.industry,
+                        city: lead.city,
+                        state: lead.state,
+                        zip: lead.zip,
+                        lead_type: lead.lead_type,
+                        priority: lead.priority,
+                        score: lead.score,
+                        source: lead.source,
+                        source_id: lead.source_id,
+                        signal_date: lead.signal_date,
+                        employees_estimated: lead.employees_estimated,
+                    });
+                    if (!error) inserted++;
+                }
+                
+                await fetchLeads();
+                setGenerating(false);
+                setShowSettings(false);
+                alert(`Generated ${inserted} new leads!`);
+            };
+
+            // Convert lead to account
+            const handleConvertToAccount = async (lead) => {
+                const { data, error } = await supabase.from('accounts').insert({
+                    company_name: lead.company_name,
+                    industry: lead.industry,
+                    city: lead.city,
+                    state: lead.state,
+                    zip: lead.zip,
+                    source_lead_id: lead.id,
+                    status: 'active'
+                }).select();
+                
+                if (!error && data) {
+                    // Update lead stage to won
+                    await supabase.from('leads').update({ stage: 'won' }).eq('id', lead.id);
+                    await fetchAccounts();
+                    await fetchLeads();
+                    setShowConvertModal(false);
+                    setSelectedItem(data[0]);
+                    setPanelType('account');
+                    alert('Lead converted to account!');
+                }
+            };
+
+            // Add activity
+            const handleAddActivity = async (type, itemId, itemType, notes, outcome) => {
+                const activityData = {
+                    activity_type: type,
+                    notes: notes,
+                    outcome: outcome,
+                };
+                
+                if (itemType === 'lead') {
+                    activityData.lead_id = itemId;
+                }
+                
+                await supabase.from('activities').insert(activityData);
+                await fetchActivities();
+            };
+
+            // Add policy
+            const handleAddPolicy = async (accountId, policyData) => {
+                await supabase.from('policies').insert({
+                    account_id: accountId,
+                    ...policyData
+                });
+                await fetchPolicies();
+            };
+
+            // Add contact
+            const handleAddContact = async (contactData) => {
+                await supabase.from('contacts').insert(contactData);
+                await fetchContacts();
+            };
+
+            // Stats
+            const stats = useMemo(() => ({
+                totalLeads: leads.length,
+                highPriority: leads.filter(l => l.priority === 'HIGH').length,
+                activeAccounts: accounts.filter(a => a.status === 'active').length,
+                totalPremium: policies.reduce((sum, p) => sum + (parseFloat(p.premium) || 0), 0),
+                pipelineValue: leads.filter(l => !['won', 'lost'].includes(l.stage)).length * 15000,
+            }), [leads, accounts, policies]);
+
+            // Filter
+            const filteredLeads = useMemo(() => {
+                return leads.filter(l => 
+                    l.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    l.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    l.industry?.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+            }, [leads, searchTerm]);
+
+            const filteredAccounts = useMemo(() => {
+                return accounts.filter(a => 
+                    a.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    a.city?.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+            }, [accounts, searchTerm]);
+
+            if (loading) {
+                return (
+                    <div className="h-screen flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                            <p className="text-gray-600">Loading LeadFlow...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    {/* Sidebar */}
+                    <div className="w-64 sidebar-gradient text-white flex flex-col">
+                        <div className="p-5 border-b border-white/10">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-lg ai-gradient flex items-center justify-center">
+                                    <i className="fas fa-bolt text-white"></i>
+                                </div>
+                                <div>
+                                    <h1 className="font-bold text-lg">LeadFlow</h1>
+                                    <p className="text-xs text-green-400">● Connected</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <nav className="flex-1 p-4 space-y-1">
+                            <NavButton icon="fa-chart-line" label="Dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                            <NavButton icon="fa-bolt" label="Lead Gen" active={view === 'leadgen'} onClick={() => setView('leadgen')} badge="NEW" badgeColor="purple" />
+                            <NavButton icon="fa-users" label="Leads" active={view === 'leads'} onClick={() => setView('leads')} badge={leads.length} />
+                            <NavButton icon="fa-stream" label="Pipeline" active={view === 'pipeline'} onClick={() => setView('pipeline')} />
+                            <NavButton icon="fa-building" label="Accounts" active={view === 'accounts'} onClick={() => setView('accounts')} badge={accounts.length} />
+                            <NavButton icon="fa-file-contract" label="Policies" active={view === 'policies'} onClick={() => setView('policies')} />
+                            <NavButton icon="fa-address-book" label="Contacts" active={view === 'contacts'} onClick={() => setView('contacts')} />
+                            <NavButton icon="fa-calendar-alt" label="Renewals" active={view === 'renewals'} onClick={() => setView('renewals')} />
+                        </nav>
+                        
+                        <div className="p-4 border-t border-white/10">
+                            <button 
+                                onClick={() => setShowSettings(true)}
+                                className="w-full py-2.5 bg-green-500 hover:bg-green-600 rounded-lg text-sm font-medium transition flex items-center justify-center"
+                            >
+                                <i className="fas fa-magic mr-2"></i>
+                                Generate Leads
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Header */}
+                        <header className="bg-white border-b border-gray-200 px-6 py-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-800 capitalize">{view === 'leadgen' ? 'Lead Generation' : view}</h2>
+                                    <p className="text-sm text-gray-500">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                        <input 
+                                            type="text"
+                                            placeholder="Search..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg w-64"
+                                        />
+                                    </div>
+                                    <button onClick={fetchAllData} className="p-2 text-gray-400 hover:text-gray-600">
+                                        <i className="fas fa-sync"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* Content */}
+                        <main className="flex-1 overflow-auto p-6">
+                            {view === 'dashboard' && (
+                                <DashboardView 
+                                    stats={stats} 
+                                    leads={leads} 
+                                    accounts={accounts}
+                                    policies={policies}
+                                    onSelectLead={(lead) => { setSelectedItem(lead); setPanelType('lead'); setShowPanel(true); }}
+                                />
+                            )}
+                            {view === 'leadgen' && (
+                                <LeadGenView 
+                                    settings={settings}
+                                    setSettings={setSettings}
+                                    onGenerate={handleGenerateLeads}
+                                    generating={generating}
+                                />
+                            )}
+                            {view === 'leads' && (
+                                <LeadsView 
+                                    leads={filteredLeads}
+                                    onSelect={(lead) => { setSelectedItem(lead); setPanelType('lead'); setShowPanel(true); }}
+                                />
+                            )}
+                            {view === 'pipeline' && (
+                                <PipelineView 
+                                    leads={leads}
+                                    stages={PIPELINE_STAGES}
+                                    onSelect={(lead) => { setSelectedItem(lead); setPanelType('lead'); setShowPanel(true); }}
+                                />
+                            )}
+                            {view === 'accounts' && (
+                                <AccountsView 
+                                    accounts={filteredAccounts}
+                                    policies={policies}
+                                    onSelect={(account) => { setSelectedItem(account); setPanelType('account'); setShowPanel(true); }}
+                                />
+                            )}
+                            {view === 'policies' && (
+                                <PoliciesView 
+                                    policies={policies}
+                                    accounts={accounts}
+                                />
+                            )}
+                            {view === 'contacts' && (
+                                <ContactsView 
+                                    contacts={contacts}
+                                    leads={leads}
+                                    accounts={accounts}
+                                />
+                            )}
+                            {view === 'renewals' && (
+                                <RenewalsView 
+                                    policies={policies}
+                                    accounts={accounts}
+                                />
+                            )}
+                        </main>
+                    </div>
+
+                    {/* Detail Panel */}
+                    {showPanel && selectedItem && (
+                        <DetailPanel 
+                            item={selectedItem}
+                            type={panelType}
+                            activities={activities.filter(a => a.lead_id === selectedItem.id)}
+                            contacts={contacts.filter(c => c.lead_id === selectedItem.id || c.account_id === selectedItem.id)}
+                            policies={policies.filter(p => p.account_id === selectedItem.id)}
+                            coaching={AI_COACHING[selectedItem.lead_type] || AI_COACHING['likely_uninsured']}
+                            onClose={() => setShowPanel(false)}
+                            onAddActivity={(type, notes, outcome) => handleAddActivity(type, selectedItem.id, panelType, notes, outcome)}
+                            onConvert={() => setShowConvertModal(true)}
+                            onAddContact={handleAddContact}
+                            onAddPolicy={(data) => handleAddPolicy(selectedItem.id, data)}
+                        />
+                    )}
+
+                    {/* Lead Gen Settings Modal */}
+                    {showSettings && (
+                        <LeadGenModal 
+                            settings={settings}
+                            setSettings={setSettings}
+                            onGenerate={handleGenerateLeads}
+                            onClose={() => setShowSettings(false)}
+                            generating={generating}
+                        />
+                    )}
+
+                    {/* Convert Modal */}
+                    {showConvertModal && selectedItem && (
+                        <ConvertModal 
+                            lead={selectedItem}
+                            onConvert={() => handleConvertToAccount(selectedItem)}
+                            onClose={() => setShowConvertModal(false)}
+                        />
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================================
+        // COMPONENTS
+        // ============================================================
+        
+        const NavButton = ({ icon, label, active, onClick, badge, badgeColor = 'white' }) => (
+            <button 
+                onClick={onClick}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${active ? 'bg-white/20' : 'hover:bg-white/10'}`}
+            >
+                <i className={`fas ${icon} w-5`}></i>
+                <span>{label}</span>
+                {badge && (
+                    <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${badgeColor === 'purple' ? 'bg-purple-500' : 'bg-white/20'}`}>
+                        {badge}
+                    </span>
+                )}
+            </button>
+        );
+
+        const StatCard = ({ icon, label, value, color = 'blue', prefix = '' }) => (
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 card-hover">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-sm text-gray-500 mb-1">{label}</p>
+                        <p className="text-3xl font-bold text-gray-800">{prefix}{typeof value === 'number' ? value.toLocaleString() : value}</p>
+                    </div>
+                    <div className={`w-12 h-12 bg-${color}-100 rounded-lg flex items-center justify-center`}>
+                        <i className={`fas ${icon} text-${color}-600 text-xl`}></i>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // ============================================================
+        // VIEWS
+        // ============================================================
+
+        const DashboardView = ({ stats, leads, accounts, policies, onSelectLead }) => (
+            <div className="space-y-6">
+                <div className="grid grid-cols-4 gap-6">
+                    <StatCard icon="fa-users" label="Total Leads" value={stats.totalLeads} color="blue" />
+                    <StatCard icon="fa-fire" label="High Priority" value={stats.highPriority} color="red" />
+                    <StatCard icon="fa-building" label="Active Accounts" value={stats.activeAccounts} color="green" />
+                    <StatCard icon="fa-dollar-sign" label="Total Premium" value={stats.totalPremium} color="purple" prefix="$" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                        <div className="p-4 border-b border-gray-100">
+                            <h3 className="font-semibold text-gray-800"><i className="fas fa-fire text-red-500 mr-2"></i>Hot Leads</h3>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                            {leads.filter(l => l.priority === 'HIGH').slice(0, 5).map(lead => (
+                                <div key={lead.id} onClick={() => onSelectLead(lead)} className="p-4 hover:bg-gray-50 cursor-pointer">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="font-medium text-gray-800">{lead.company_name}</span>
+                                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{lead.priority}</span>
+                                    </div>
+                                    <p className="text-sm text-gray-500">{lead.city}, {lead.state} • {lead.industry}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                        <div className="p-4 border-b border-gray-100">
+                            <h3 className="font-semibold text-gray-800"><i className="fas fa-building text-green-500 mr-2"></i>Recent Accounts</h3>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                            {accounts.slice(0, 5).map(account => (
+                                <div key={account.id} className="p-4 hover:bg-gray-50 cursor-pointer">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="font-medium text-gray-800">{account.company_name}</span>
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{account.status}</span>
+                                    </div>
+                                    <p className="text-sm text-gray-500">{account.city}, {account.state}</p>
+                                </div>
+                            ))}
+                            {accounts.length === 0 && (
+                                <div className="p-8 text-center text-gray-500">
+                                    <i className="fas fa-building text-4xl text-gray-300 mb-3"></i>
+                                    <p>No accounts yet. Convert a lead to get started!</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const LeadGenView = ({ settings, setSettings, onGenerate, generating }) => (
+            <div className="max-w-4xl mx-auto">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <div className="flex items-center space-x-3 mb-6">
+                        <div className="w-12 h-12 ai-gradient rounded-lg flex items-center justify-center">
+                            <i className="fas fa-magic text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Lead Generation Settings</h3>
+                            <p className="text-sm text-gray-500">Configure your lead criteria and generate targeted prospects</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">States</label>
+                            <div className="flex flex-wrap gap-2">
+                                {STATES.map(state => (
+                                    <button
+                                        key={state}
+                                        onClick={() => {
+                                            if (settings.states.includes(state)) {
+                                                setSettings({...settings, states: settings.states.filter(s => s !== state)});
+                                            } else {
+                                                setSettings({...settings, states: [...settings.states, state]});
+                                            }
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                                            settings.states.includes(state) 
+                                                ? 'bg-blue-600 text-white' 
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {state}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Industries</label>
+                            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                                {INDUSTRIES.map(ind => (
+                                    <button
+                                        key={ind}
+                                        onClick={() => {
+                                            if (settings.industries.includes(ind)) {
+                                                setSettings({...settings, industries: settings.industries.filter(i => i !== ind)});
+                                            } else {
+                                                setSettings({...settings, industries: [...settings.industries, ind]});
+                                            }
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                                            settings.industries.includes(ind) 
+                                                ? 'bg-green-600 text-white' 
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {ind}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div className="col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Signal Types</label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {SIGNAL_TYPES.map(signal => (
+                                    <button
+                                        key={signal.id}
+                                        onClick={() => {
+                                            if (settings.signalTypes.includes(signal.id)) {
+                                                setSettings({...settings, signalTypes: settings.signalTypes.filter(s => s !== signal.id)});
+                                            } else {
+                                                setSettings({...settings, signalTypes: [...settings.signalTypes, signal.id]});
+                                            }
+                                        }}
+                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 ${
+                                            settings.signalTypes.includes(signal.id) 
+                                                ? 'bg-purple-600 text-white' 
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        <i className={`fas ${signal.icon}`}></i>
+                                        <span>{signal.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Leads per batch</label>
+                            <select 
+                                value={settings.leadsPerBatch}
+                                onChange={(e) => setSettings({...settings, leadsPerBatch: parseInt(e.target.value)})}
+                                className="w-full p-3 border border-gray-200 rounded-lg"
+                            >
+                                <option value={25}>25 leads</option>
+                                <option value={50}>50 leads</option>
+                                <option value={100}>100 leads</option>
+                                <option value={200}>200 leads</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                        <button
+                            onClick={onGenerate}
+                            disabled={generating || settings.states.length === 0 || settings.industries.length === 0}
+                            className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-semibold text-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition flex items-center justify-center"
+                        >
+                            {generating ? (
+                                <>
+                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
+                                    Generating...
+                                </>
+                            ) : (
+                                <>
+                                    <i className="fas fa-bolt mr-3"></i>
+                                    Generate {settings.leadsPerBatch} Leads Now
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const LeadsView = ({ leads, onSelect }) => (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="p-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-800">All Leads ({leads.length})</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Location</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Priority</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Score</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {leads.map(lead => (
+                                <tr key={lead.id} onClick={() => onSelect(lead)} className="hover:bg-gray-50 cursor-pointer">
+                                    <td className="px-4 py-3">
+                                        <div className="font-medium text-gray-800">{lead.company_name}</div>
+                                        <div className="text-xs text-gray-500">{lead.industry}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{lead.city}, {lead.state}</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                            lead.lead_type === 'likely_uninsured' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                                        }`}>
+                                            {lead.lead_type === 'likely_uninsured' ? 'Uninsured' : 'Gap'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                            lead.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                                            lead.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
+                                        }`}>{lead.priority}</span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                                            lead.score >= 85 ? 'bg-green-500' : lead.score >= 70 ? 'bg-yellow-500' : 'bg-gray-400'
+                                        }`}>{lead.score}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">{lead.source}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+
+        const PipelineView = ({ leads, stages, onSelect }) => (
+            <div className="flex space-x-4 overflow-x-auto pb-4">
+                {stages.map(stage => {
+                    const stageLeads = leads.filter(l => (l.stage || 'new') === stage.id);
+                    return (
+                        <div key={stage.id} className="flex-shrink-0 w-72">
+                            <div className={`bg-${stage.color}-50 rounded-t-xl p-3 border-b-2 border-${stage.color}-200`}>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-gray-800">{stage.name}</span>
+                                    <span className="bg-white px-2 py-0.5 rounded-full text-sm">{stageLeads.length}</span>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 rounded-b-xl p-2 min-h-[500px] space-y-2">
+                                {stageLeads.map(lead => (
+                                    <div key={lead.id} onClick={() => onSelect(lead)} className="bg-white rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition">
+                                        <div className="font-medium text-sm text-gray-800 truncate">{lead.company_name}</div>
+                                        <div className="text-xs text-gray-500 mt-1">{lead.city}, {lead.state}</div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                lead.priority === 'HIGH' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                                            }`}>{lead.priority}</span>
+                                            <span className="text-xs text-gray-400">{lead.score}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+
+        const AccountsView = ({ accounts, policies, onSelect }) => (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="p-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-800">Accounts ({accounts.length})</h3>
+                </div>
+                {accounts.length === 0 ? (
+                    <div className="p-12 text-center">
+                        <i className="fas fa-building text-5xl text-gray-300 mb-4"></i>
+                        <h4 className="text-lg font-medium text-gray-800 mb-2">No accounts yet</h4>
+                        <p className="text-gray-500">Convert a lead to create your first account</p>
+                    </div>
+                ) : (
+                    <table className="w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Location</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Industry</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Policies</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {accounts.map(account => (
+                                <tr key={account.id} onClick={() => onSelect(account)} className="hover:bg-gray-50 cursor-pointer">
+                                    <td className="px-4 py-3 font-medium text-gray-800">{account.company_name}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{account.city}, {account.state}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{account.industry}</td>
+                                    <td className="px-4 py-3 text-sm">{policies.filter(p => p.account_id === account.id).length}</td>
+                                    <td className="px-4 py-3">
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">{account.status}</span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        );
+
+        const PoliciesView = ({ policies, accounts }) => (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="p-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-800">Policies ({policies.length})</h3>
+                </div>
+                {policies.length === 0 ? (
+                    <div className="p-12 text-center">
+                        <i className="fas fa-file-contract text-5xl text-gray-300 mb-4"></i>
+                        <h4 className="text-lg font-medium text-gray-800 mb-2">No policies yet</h4>
+                        <p className="text-gray-500">Add policies to your accounts to track them here</p>
+                    </div>
+                ) : (
+                    <table className="w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Account</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Carrier</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Premium</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Expiration</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {policies.map(policy => {
+                                const account = accounts.find(a => a.id === policy.account_id);
+                                return (
+                                    <tr key={policy.id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-medium text-gray-800">{account?.company_name || 'Unknown'}</td>
+                                        <td className="px-4 py-3 text-sm">{policy.policy_type}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{policy.carrier}</td>
+                                        <td className="px-4 py-3 text-sm font-medium text-green-600">${policy.premium?.toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{policy.expiration_date}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        );
+
+        const ContactsView = ({ contacts, leads, accounts }) => (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="p-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-800">Contacts ({contacts.length})</h3>
+                </div>
+                {contacts.length === 0 ? (
+                    <div className="p-12 text-center">
+                        <i className="fas fa-address-book text-5xl text-gray-300 mb-4"></i>
+                        <h4 className="text-lg font-medium text-gray-800 mb-2">No contacts yet</h4>
+                        <p className="text-gray-500">Add contacts to leads or accounts</p>
+                    </div>
+                ) : (
+                    <table className="w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Name</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Title</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Email</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Phone</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {contacts.map(contact => {
+                                const company = contact.account_id 
+                                    ? accounts.find(a => a.id === contact.account_id)?.company_name
+                                    : leads.find(l => l.id === contact.lead_id)?.company_name;
+                                return (
+                                    <tr key={contact.id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-medium text-gray-800">{contact.first_name} {contact.last_name}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{contact.title}</td>
+                                        <td className="px-4 py-3 text-sm">{company}</td>
+                                        <td className="px-4 py-3 text-sm text-blue-600">{contact.email}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{contact.phone}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        );
+
+        const RenewalsView = ({ policies, accounts }) => {
+            const upcomingRenewals = policies
+                .filter(p => p.expiration_date)
+                .sort((a, b) => new Date(a.expiration_date) - new Date(b.expiration_date))
+                .slice(0, 20);
+            
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                    <div className="p-4 border-b border-gray-100">
+                        <h3 className="font-semibold text-gray-800">Upcoming Renewals</h3>
+                    </div>
+                    {upcomingRenewals.length === 0 ? (
+                        <div className="p-12 text-center">
+                            <i className="fas fa-calendar-alt text-5xl text-gray-300 mb-4"></i>
+                            <h4 className="text-lg font-medium text-gray-800 mb-2">No upcoming renewals</h4>
+                            <p className="text-gray-500">Add policies with expiration dates to track renewals</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-100">
+                            {upcomingRenewals.map(policy => {
+                                const account = accounts.find(a => a.id === policy.account_id);
+                                const daysUntil = Math.ceil((new Date(policy.expiration_date) - new Date()) / (1000 * 60 * 60 * 24));
+                                return (
+                                    <div key={policy.id} className="p-4 hover:bg-gray-50">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="font-medium text-gray-800">{account?.company_name}</span>
+                                            <span className={`text-xs px-2 py-1 rounded-full ${
+                                                daysUntil <= 30 ? 'bg-red-100 text-red-700' :
+                                                daysUntil <= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                                            }`}>
+                                                {daysUntil} days
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-500">{policy.policy_type} • ${policy.premium?.toLocaleString()} • Expires {policy.expiration_date}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ============================================================
+        // DETAIL PANEL
+        // ============================================================
+
+        const DetailPanel = ({ item, type, activities, contacts, policies, coaching, onClose, onAddActivity, onConvert, onAddContact, onAddPolicy }) => {
+            const [tab, setTab] = useState(type === 'lead' ? 'coach' : 'details');
+            const [notes, setNotes] = useState('');
+            const [outcome, setOutcome] = useState('');
+            const [showAddContact, setShowAddContact] = useState(false);
+            const [showAddPolicy, setShowAddPolicy] = useState(false);
+            const [newContact, setNewContact] = useState({ first_name: '', last_name: '', title: '', email: '', phone: '' });
+            const [newPolicy, setNewPolicy] = useState({ policy_type: '', carrier: '', premium: '', effective_date: '', expiration_date: '' });
+
+            const handleLogActivity = (actType) => {
+                if (!notes.trim()) return;
+                onAddActivity(actType, notes, outcome);
+                setNotes('');
+                setOutcome('');
+            };
+
+            const handleSaveContact = () => {
+                onAddContact({
+                    ...newContact,
+                    [type === 'lead' ? 'lead_id' : 'account_id']: item.id
+                });
+                setNewContact({ first_name: '', last_name: '', title: '', email: '', phone: '' });
+                setShowAddContact(false);
+            };
+
+            const handleSavePolicy = () => {
+                onAddPolicy(newPolicy);
+                setNewPolicy({ policy_type: '', carrier: '', premium: '', effective_date: '', expiration_date: '' });
+                setShowAddPolicy(false);
+            };
+
+            return (
+                <div className="w-[420px] bg-white border-l border-gray-200 flex flex-col">
+                    {/* Header */}
+                    <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-semibold text-white truncate">{item.company_name}</h3>
+                            <button onClick={onClose} className="text-white/70 hover:text-white">
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div className="flex items-center space-x-2 text-sm">
+                            <span className="text-white/70">{item.city}, {item.state}</span>
+                            {item.priority && (
+                                <span className={`px-2 py-0.5 rounded text-xs ${
+                                    item.priority === 'HIGH' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-white'
+                                }`}>{item.priority}</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b border-gray-200 text-sm">
+                        {type === 'lead' && (
+                            <button onClick={() => setTab('coach')} className={`flex-1 px-3 py-2.5 font-medium ${tab === 'coach' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>
+                                <i className="fas fa-robot mr-1"></i>Coach
+                            </button>
+                        )}
+                        <button onClick={() => setTab('details')} className={`flex-1 px-3 py-2.5 font-medium ${tab === 'details' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>
+                            <i className="fas fa-info-circle mr-1"></i>Details
+                        </button>
+                        <button onClick={() => setTab('activity')} className={`flex-1 px-3 py-2.5 font-medium ${tab === 'activity' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>
+                            <i className="fas fa-history mr-1"></i>Activity
+                        </button>
+                        <button onClick={() => setTab('contacts')} className={`flex-1 px-3 py-2.5 font-medium ${tab === 'contacts' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>
+                            <i className="fas fa-user mr-1"></i>Contacts
+                        </button>
+                        {type === 'account' && (
+                            <button onClick={() => setTab('policies')} className={`flex-1 px-3 py-2.5 font-medium ${tab === 'policies' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}>
+                                <i className="fas fa-file mr-1"></i>Policies
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {tab === 'coach' && coaching && (
+                            <div className="space-y-4">
+                                <div className="coach-card bg-purple-50 rounded-lg p-4">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <i className="fas fa-comment-dots text-purple-600"></i>
+                                        <span className="font-semibold text-purple-800 text-sm">Opening Line</span>
+                                    </div>
+                                    <p className="text-sm text-gray-700 italic">"{coaching.opener}"</p>
+                                </div>
+                                <div className="coach-card bg-blue-50 rounded-lg p-4">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <i className="fas fa-lightbulb text-blue-600"></i>
+                                        <span className="font-semibold text-blue-800 text-sm">Your Angle</span>
+                                    </div>
+                                    <p className="text-sm text-gray-700">{coaching.angle}</p>
+                                </div>
+                                <div className="coach-card bg-orange-50 rounded-lg p-4">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <i className="fas fa-clock text-orange-600"></i>
+                                        <span className="font-semibold text-orange-800 text-sm">Timing</span>
+                                    </div>
+                                    <p className="text-sm text-gray-700">{coaching.timing}</p>
+                                </div>
+                                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                    <div className="px-4 py-3 bg-gray-50 border-b">
+                                        <span className="font-semibold text-gray-800 text-sm"><i className="fas fa-shield-alt mr-2"></i>Objections</span>
+                                    </div>
+                                    {Object.entries(coaching.objections).map(([obj, resp]) => (
+                                        <div key={obj} className="p-3 border-b border-gray-100 last:border-0">
+                                            <p className="text-xs font-medium text-red-600 mb-1">"{obj}"</p>
+                                            <p className="text-sm text-gray-700">{resp}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'details' && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs text-gray-500">Industry</p>
+                                        <p className="font-medium">{item.industry || '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Employees</p>
+                                        <p className="font-medium">{item.employees_estimated || item.employees || '-'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Location</p>
+                                        <p className="font-medium">{item.city}, {item.state} {item.zip}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Score</p>
+                                        <p className="font-medium">{item.score || '-'}</p>
+                                    </div>
+                                    {item.signal_date && (
+                                        <div className="col-span-2">
+                                            <p className="text-xs text-gray-500">Signal Date</p>
+                                            <p className="font-medium">{item.signal_date}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'activity' && (
+                            <div className="space-y-4">
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-semibold text-gray-800 text-sm mb-3">Log Activity</h4>
+                                    <textarea
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value)}
+                                        placeholder="What happened?"
+                                        className="w-full h-20 p-3 border border-gray-200 rounded-lg text-sm resize-none mb-2"
+                                    />
+                                    <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full p-2 border border-gray-200 rounded-lg text-sm mb-3">
+                                        <option value="">Outcome...</option>
+                                        <option value="voicemail">Voicemail</option>
+                                        <option value="spoke_interested">Spoke - Interested</option>
+                                        <option value="spoke_not_interested">Not Interested</option>
+                                        <option value="email_sent">Email Sent</option>
+                                        <option value="meeting_set">Meeting Set</option>
+                                    </select>
+                                    <div className="flex space-x-2">
+                                        <button onClick={() => handleLogActivity('call')} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm">
+                                            <i className="fas fa-phone mr-1"></i>Call
+                                        </button>
+                                        <button onClick={() => handleLogActivity('email')} className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm">
+                                            <i className="fas fa-envelope mr-1"></i>Email
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="font-semibold text-gray-800 text-sm mb-3">History</h4>
+                                    {activities.length === 0 ? (
+                                        <p className="text-sm text-gray-500 text-center py-4">No activities yet</p>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {activities.map(a => (
+                                                <div key={a.id} className="flex space-x-3">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${a.activity_type === 'call' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+                                                        <i className={`fas ${a.activity_type === 'call' ? 'fa-phone text-blue-600' : 'fa-envelope text-purple-600'} text-xs`}></i>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-medium capitalize">{a.activity_type}</p>
+                                                        <p className="text-sm text-gray-600">{a.notes}</p>
+                                                        {a.outcome && <p className="text-xs text-gray-400">{a.outcome}</p>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'contacts' && (
+                            <div className="space-y-4">
+                                <button onClick={() => setShowAddContact(true)} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600">
+                                    <i className="fas fa-plus mr-2"></i>Add Contact
+                                </button>
+                                {showAddContact && (
+                                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input placeholder="First name" value={newContact.first_name} onChange={(e) => setNewContact({...newContact, first_name: e.target.value})} className="p-2 border rounded text-sm" />
+                                            <input placeholder="Last name" value={newContact.last_name} onChange={(e) => setNewContact({...newContact, last_name: e.target.value})} className="p-2 border rounded text-sm" />
+                                        </div>
+                                        <input placeholder="Title" value={newContact.title} onChange={(e) => setNewContact({...newContact, title: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input placeholder="Email" value={newContact.email} onChange={(e) => setNewContact({...newContact, email: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input placeholder="Phone" value={newContact.phone} onChange={(e) => setNewContact({...newContact, phone: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <div className="flex space-x-2">
+                                            <button onClick={handleSaveContact} className="flex-1 py-2 bg-blue-600 text-white rounded text-sm">Save</button>
+                                            <button onClick={() => setShowAddContact(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm">Cancel</button>
+                                        </div>
+                                    </div>
+                                )}
+                                {contacts.length === 0 && !showAddContact ? (
+                                    <p className="text-sm text-gray-500 text-center py-4">No contacts yet</p>
+                                ) : (
+                                    contacts.map(c => (
+                                        <div key={c.id} className="p-3 bg-gray-50 rounded-lg">
+                                            <p className="font-medium">{c.first_name} {c.last_name}</p>
+                                            <p className="text-sm text-gray-500">{c.title}</p>
+                                            <p className="text-sm text-blue-600">{c.email}</p>
+                                            <p className="text-sm text-gray-600">{c.phone}</p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+
+                        {tab === 'policies' && type === 'account' && (
+                            <div className="space-y-4">
+                                <button onClick={() => setShowAddPolicy(true)} className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-green-400 hover:text-green-600">
+                                    <i className="fas fa-plus mr-2"></i>Add Policy
+                                </button>
+                                {showAddPolicy && (
+                                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                                        <select value={newPolicy.policy_type} onChange={(e) => setNewPolicy({...newPolicy, policy_type: e.target.value})} className="w-full p-2 border rounded text-sm">
+                                            <option value="">Policy Type...</option>
+                                            {COVERAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                        <input placeholder="Carrier" value={newPolicy.carrier} onChange={(e) => setNewPolicy({...newPolicy, carrier: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input type="number" placeholder="Premium" value={newPolicy.premium} onChange={(e) => setNewPolicy({...newPolicy, premium: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="date" placeholder="Effective" value={newPolicy.effective_date} onChange={(e) => setNewPolicy({...newPolicy, effective_date: e.target.value})} className="p-2 border rounded text-sm" />
+                                            <input type="date" placeholder="Expiration" value={newPolicy.expiration_date} onChange={(e) => setNewPolicy({...newPolicy, expiration_date: e.target.value})} className="p-2 border rounded text-sm" />
+                                        </div>
+                                        <div className="flex space-x-2">
+                                            <button onClick={handleSavePolicy} className="flex-1 py-2 bg-green-600 text-white rounded text-sm">Save</button>
+                                            <button onClick={() => setShowAddPolicy(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm">Cancel</button>
+                                        </div>
+                                    </div>
+                                )}
+                                {policies.length === 0 && !showAddPolicy ? (
+                                    <p className="text-sm text-gray-500 text-center py-4">No policies yet</p>
+                                ) : (
+                                    policies.map(p => (
+                                        <div key={p.id} className="p-3 bg-gray-50 rounded-lg">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <p className="font-medium">{p.policy_type}</p>
+                                                <p className="text-green-600 font-medium">${parseFloat(p.premium).toLocaleString()}</p>
+                                            </div>
+                                            <p className="text-sm text-gray-500">{p.carrier}</p>
+                                            <p className="text-xs text-gray-400">Expires: {p.expiration_date}</p>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-4 border-t border-gray-200 space-y-2">
+                        {type === 'lead' && (
+                            <button onClick={onConvert} className="w-full py-2.5 green-gradient text-white rounded-lg font-medium">
+                                <i className="fas fa-check-circle mr-2"></i>Convert to Account
+                            </button>
+                        )}
+                        <button className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium">
+                            <i className="fas fa-phone mr-2"></i>Call Now
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // ============================================================
+        // MODALS
+        // ============================================================
+
+        const LeadGenModal = ({ settings, setSettings, onGenerate, onClose, generating }) => (
+            <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl shadow-2xl w-[600px] max-h-[80vh] overflow-hidden">
+                    <div className="p-6 border-b border-gray-100">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-bold text-gray-800">Generate Leads</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <i className="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div className="p-6 space-y-6 overflow-y-auto max-h-[60vh]">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">States</label>
+                            <div className="flex flex-wrap gap-2">
+                                {STATES.map(state => (
+                                    <button
+                                        key={state}
+                                        onClick={() => setSettings({...settings, states: settings.states.includes(state) ? settings.states.filter(s => s !== state) : [...settings.states, state]})}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${settings.states.includes(state) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                                    >
+                                        {state}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Industries</label>
+                            <div className="flex flex-wrap gap-2">
+                                {INDUSTRIES.map(ind => (
+                                    <button
+                                        key={ind}
+                                        onClick={() => setSettings({...settings, industries: settings.industries.includes(ind) ? settings.industries.filter(i => i !== ind) : [...settings.industries, ind]})}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${settings.industries.includes(ind) ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+                                    >
+                                        {ind}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Lead Count</label>
+                            <select value={settings.leadsPerBatch} onChange={(e) => setSettings({...settings, leadsPerBatch: parseInt(e.target.value)})} className="w-full p-3 border rounded-lg">
+                                <option value={25}>25 leads</option>
+                                <option value={50}>50 leads</option>
+                                <option value={100}>100 leads</option>
+                                <option value={200}>200 leads</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="p-6 border-t border-gray-100">
+                        <button onClick={onGenerate} disabled={generating} className="w-full py-3 ai-gradient text-white rounded-lg font-semibold disabled:opacity-50">
+                            {generating ? 'Generating...' : `Generate ${settings.leadsPerBatch} Leads`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ConvertModal = ({ lead, onConvert, onClose }) => (
+            <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl shadow-2xl w-[400px] p-6">
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Convert to Account</h3>
+                    <p className="text-gray-600 mb-6">Convert <strong>{lead.company_name}</strong> to an active account?</p>
+                    <div className="flex space-x-3">
+                        <button onClick={onConvert} className="flex-1 py-3 green-gradient text-white rounded-lg font-semibold">
+                            <i className="fas fa-check mr-2"></i>Convert
+                        </button>
+                        <button onClick={onClose} className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // ============================================================
+        // RENDER
+        // ============================================================
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
