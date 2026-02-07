@@ -1,1 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeadFlow CRM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-gradient { background: linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%); }
+        .ai-gradient { background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%); }
+        .green-gradient { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .coach-card { border-left: 4px solid #8b5cf6; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+        .card-hover { transition: all 0.2s ease; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .modal-overlay { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+        @media (max-width: 768px) {
+            .sidebar-desktop { display: none; }
+            .mobile-header { display: flex !important; }
+            .mobile-nav { display: flex !important; }
+            .detail-panel { position: fixed; left: 0; right: 0; bottom: 0; top: 60px; width: 100% !important; z-index: 50; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+            .hide-mobile { display: none !important; }
+        }
+        @media (min-width: 769px) {
+            .mobile-header { display: none !important; }
+            .mobile-nav { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
+        const SUPABASE_URL = 'https://fxmclnvdimbnkuzkdnye.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_ltlJqdllcZXZ87FU8JiMcA_c1fUrhRO';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const STATES = ['TX', 'OK', 'LA', 'NM', 'CA', 'FL', 'GA', 'NC', 'AZ', 'CO', 'OH', 'PA', 'IL', 'NY'];
+        const INDUSTRIES = ['Construction', 'Trucking', 'Oilfield', 'Electrical', 'Plumbing', 'Restaurant', 'Medical', 'Landscaping', 'Manufacturing', 'Cleaning', 'Auto Services', 'Staffing', 'Warehouse', 'Retail', 'Wholesale'];
+        const SIGNAL_TYPES = [
+            { id: 'new_formation', name: 'New Business', icon: 'fa-building' },
+            { id: 'new_dot', name: 'New DOT', icon: 'fa-truck' },
+            { id: 'osha_violation', name: 'OSHA Violation', icon: 'fa-exclamation-triangle' },
+            { id: 'high_emod', name: 'High E-Mod', icon: 'fa-chart-line' },
+            { id: 'ma_activity', name: 'M&A Activity', icon: 'fa-handshake' },
+            { id: 'foreign_registration', name: 'Foreign Reg', icon: 'fa-globe' },
+            { id: 'first_permit', name: 'First Permit', icon: 'fa-file-alt' },
+        ];
+        const COVERAGE_TYPES = ['General Liability', 'Workers Comp', 'Commercial Auto', 'Umbrella', 'Property', 'Professional Liability', 'Cyber', 'D&O', 'EPLI', 'Builders Risk', 'Motor Truck Cargo', 'Pollution', 'Equipment'];
+        const PIPELINE_STAGES = [
+            { id: 'new', name: 'New', color: 'blue' },
+            { id: 'contacted', name: 'Contacted', color: 'yellow' },
+            { id: 'quoted', name: 'Quoted', color: 'purple' },
+            { id: 'negotiating', name: 'Negotiating', color: 'orange' },
+            { id: 'won', name: 'Won', color: 'green' },
+            { id: 'lost', name: 'Lost', color: 'gray' },
+        ];
+        const AI_COACHING = {
+            'likely_uninsured': {
+                opener: "Congrats on the new venture! Most new businesses get crushed on insurance quotes because carriers see them as unknown risks.",
+                angle: "Position yourself as the specialist who works with new businesses and can get competitive rates.",
+                timing: "URGENT - Call within 7 days of formation. They need coverage now.",
+                objections: {
+                    "Already have coverage": "Great you moved fast! Did your agent explain the audit process?",
+                    "Too expensive": "Rates vary wildly. I work with 15+ markets. Can I run a comparison?",
+                    "Not interested": "No problem. What coverage did you end up with?"
+                }
+            },
+            'coverage_gap': {
+                opener: "I came across your company while doing research. I help companies navigate insurance challenges.",
+                angle: "Position yourself as the expert who finds solutions when others can't.",
+                timing: "Call within 30 days. They may not realize the full impact yet.",
+                objections: {
+                    "Our broker handles it": "Have they run a full analysis? I can do a free review.",
+                    "We're dealing with it": "I help companies build narratives that keep carriers from running.",
+                    "Not interested": "If your carrier non-renews, call me - I specialize in hard-to-place."
+                }
+            }
+        };
+        const AVG_PREMIUM = 15000;
+
+        // Lead Generator with Deduplication
+        const generateLeads = (settings, count, existingLeads = []) => {
+            const { states, industries, signalTypes } = settings;
+            const leads = [];
+            const existingNames = new Set(existingLeads.map(l => l.company_name?.toLowerCase().trim()));
+            const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'White', 'Harris', 'Martin', 'Thompson'];
+            const adjectives = ['Premier', 'Elite', 'Professional', 'Advanced', 'Quality', 'Superior', 'First Choice', 'Reliable', 'Texas', 'Lone Star', 'Pro', 'Expert', 'Prime'];
+            const cities = {
+                'TX': ['Houston', 'Dallas', 'San Antonio', 'Austin', 'Fort Worth', 'Midland', 'Odessa', 'El Paso', 'Lubbock', 'Irving', 'Plano', 'Arlington'],
+                'OK': ['Oklahoma City', 'Tulsa', 'Norman', 'Broken Arrow', 'Edmond'],
+                'LA': ['New Orleans', 'Baton Rouge', 'Shreveport', 'Lafayette', 'Lake Charles'],
+                'NM': ['Albuquerque', 'Santa Fe', 'Las Cruces', 'Roswell', 'Farmington'],
+                'CA': ['Los Angeles', 'San Francisco', 'San Diego', 'Sacramento', 'Fresno'],
+                'FL': ['Miami', 'Tampa', 'Orlando', 'Jacksonville', 'Fort Lauderdale'],
+            };
+            const patterns = {
+                'Construction': ['{adj} Construction LLC', '{last} Builders Inc', '{city} Contractors'],
+                'Trucking': ['{last} Trucking LLC', '{city} Freight Inc', '{adj} Transport'],
+                'Oilfield': ['{city} Oilfield Services', '{last} Energy LLC', 'Permian {last}'],
+                'Electrical': ['{last} Electric LLC', '{city} Electrical', '{adj} Electric'],
+                'Plumbing': ['{last} Plumbing LLC', '{city} Plumbing & HVAC', '{adj} Mechanical'],
+                'Restaurant': ['{last} Restaurant Group', 'The {last} Kitchen', '{city} Dining'],
+                'Medical': ['{city} Medical PLLC', '{last} Healthcare', '{adj} Medical'],
+                'Landscaping': ['{last} Landscaping', '{city} Lawn Care', '{adj} Landscape'],
+                'Manufacturing': ['{city} Fabrication', '{last} Manufacturing', '{adj} Machine'],
+                'Cleaning': ['{last} Cleaning', '{city} Janitorial', '{adj} Commercial Clean'],
+            };
+
+            let attempts = 0;
+            while (leads.length < count && attempts < count * 3) {
+                attempts++;
+                const state = states[Math.floor(Math.random() * states.length)];
+                const industry = industries[Math.floor(Math.random() * industries.length)];
+                const signalType = signalTypes[Math.floor(Math.random() * signalTypes.length)];
+                const cityList = cities[state] || cities['TX'];
+                const city = cityList[Math.floor(Math.random() * cityList.length)];
+                const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+                const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+                const patternList = patterns[industry] || patterns['Construction'];
+                const pattern = patternList[Math.floor(Math.random() * patternList.length)];
+                const companyName = pattern.replace('{last}', lastName).replace('{city}', city).replace('{adj}', adj).toUpperCase();
+                
+                if (existingNames.has(companyName.toLowerCase()) || leads.some(l => l.company_name.toLowerCase() === companyName.toLowerCase())) continue;
+                
+                const daysAgo = Math.floor(Math.random() * 14);
+                const signalDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                const score = Math.floor(Math.random() * 35) + 65;
+                
+                leads.push({
+                    company_name: companyName,
+                    industry,
+                    city,
+                    state,
+                    zip: String(Math.floor(Math.random() * 90000) + 10000),
+                    lead_type: ['new_formation', 'new_dot', 'first_permit'].includes(signalType) ? 'likely_uninsured' : 'coverage_gap',
+                    priority: score >= 85 ? 'HIGH' : score >= 70 ? 'MEDIUM' : 'LOW',
+                    score,
+                    source: 'leadflow',
+                    source_id: `LF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    signal_date: signalDate,
+                    employees_estimated: ['1-5', '5-10', '10-25', '25-50'][Math.floor(Math.random() * 4)],
+                    stage: 'new'
+                });
+                existingNames.add(companyName.toLowerCase());
+            }
+            return leads;
+        };
+
+        // Auth Screen
+        const AuthScreen = ({ onLogin }) => {
+            const [mode, setMode] = useState('login');
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [name, setName] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [message, setMessage] = useState('');
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setError(''); setLoading(true);
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) setError(error.message);
+                else onLogin(data.user);
+                setLoading(false);
+            };
+
+            const handleSignup = async (e) => {
+                e.preventDefault();
+                setError(''); setLoading(true);
+                const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
+                if (error) setError(error.message);
+                else { setMessage('Check email to confirm!'); setMode('login'); }
+                setLoading(false);
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+                        <div className="text-center mb-8">
+                            <div className="w-16 h-16 ai-gradient rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                <i className="fas fa-bolt text-white text-2xl"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold">LeadFlow</h1>
+                            <p className="text-gray-500">Signal-Based Lead Intelligence</p>
+                        </div>
+                        {error && <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg mb-4 text-sm">{error}</div>}
+                        {message && <div className="bg-green-50 text-green-600 px-4 py-3 rounded-lg mb-4 text-sm">{message}</div>}
+                        
+                        {mode === 'login' && (
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Email" required />
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Password" required />
+                                <button type="submit" disabled={loading} className="w-full py-3 ai-gradient text-white rounded-lg font-semibold disabled:opacity-50">
+                                    {loading ? 'Signing in...' : 'Sign In'}
+                                </button>
+                            </form>
+                        )}
+                        {mode === 'signup' && (
+                            <form onSubmit={handleSignup} className="space-y-4">
+                                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Full Name" required />
+                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Email" required />
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Password" required minLength={6} />
+                                <button type="submit" disabled={loading} className="w-full py-3 green-gradient text-white rounded-lg font-semibold disabled:opacity-50">
+                                    {loading ? 'Creating...' : 'Create Account'}
+                                </button>
+                            </form>
+                        )}
+                        
+                        <div className="mt-6 text-center text-sm">
+                            {mode === 'login' ? (
+                                <button onClick={() => setMode('signup')} className="text-blue-600 hover:underline">Create account</button>
+                            ) : (
+                                <button onClick={() => setMode('login')} className="text-blue-600 hover:underline">Back to sign in</button>
+                            )}
+                        </div>
+                        <div className="mt-6 pt-6 border-t">
+                            <button onClick={() => onLogin({ id: 'demo', email: 'demo@leadflow.com', user_metadata: { full_name: 'Demo User' } })} className="w-full py-3 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg font-medium hover:border-blue-400 hover:text-blue-600">
+                                <i className="fas fa-play mr-2"></i>Try Demo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Main App
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [authLoading, setAuthLoading] = useState(true);
+            const [view, setView] = useState('dashboard');
+            const [loading, setLoading] = useState(true);
+            const [leads, setLeads] = useState([]);
+            const [accounts, setAccounts] = useState([]);
+            const [policies, setPolicies] = useState([]);
+            const [contacts, setContacts] = useState([]);
+            const [activities, setActivities] = useState([]);
+            const [selectedItem, setSelectedItem] = useState(null);
+            const [showPanel, setShowPanel] = useState(false);
+            const [panelType, setPanelType] = useState('lead');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
+            const [showConvertModal, setShowConvertModal] = useState(false);
+            const [generating, setGenerating] = useState(false);
+            const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+            const [settings, setSettings] = useState({
+                states: ['TX'],
+                industries: ['Construction', 'Trucking', 'Oilfield'],
+                signalTypes: ['new_formation', 'new_dot', 'osha_violation'],
+                leadsPerBatch: 50
+            });
+
+            useEffect(() => {
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    setUser(session?.user ?? null);
+                    setAuthLoading(false);
+                });
+                const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
+                return () => subscription.unsubscribe();
+            }, []);
+
+            useEffect(() => { if (user) fetchAllData(); }, [user]);
+
+            const fetchAllData = async () => {
+                setLoading(true);
+                const [leadsRes, accountsRes, policiesRes, contactsRes, activitiesRes] = await Promise.all([
+                    supabase.from('leads').select('*').order('created_at', { ascending: false }),
+                    supabase.from('accounts').select('*').order('created_at', { ascending: false }),
+                    supabase.from('policies').select('*').order('created_at', { ascending: false }),
+                    supabase.from('contacts').select('*').order('created_at', { ascending: false }),
+                    supabase.from('activities').select('*').order('created_at', { ascending: false })
+                ]);
+                setLeads(leadsRes.data || []);
+                setAccounts(accountsRes.data || []);
+                setPolicies(policiesRes.data || []);
+                setContacts(contactsRes.data || []);
+                setActivities(activitiesRes.data || []);
+                setLoading(false);
+            };
+
+            const handleGenerateLeads = async () => {
+                setGenerating(true);
+                const newLeads = generateLeads(settings, settings.leadsPerBatch, leads);
+                let inserted = 0;
+                for (const lead of newLeads) {
+                    const { error } = await supabase.from('leads').insert(lead);
+                    if (!error) inserted++;
+                }
+                await fetchAllData();
+                setGenerating(false);
+                setShowSettings(false);
+                alert(`Generated ${inserted} new leads!`);
+            };
+
+            const handleUpdateLeadStage = async (leadId, newStage) => {
+                await supabase.from('leads').update({ stage: newStage }).eq('id', leadId);
+                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: newStage } : l));
+                if (selectedItem?.id === leadId) setSelectedItem(prev => ({ ...prev, stage: newStage }));
+            };
+
+            const handleConvertToAccount = async (lead) => {
+                const { data, error } = await supabase.from('accounts').insert({
+                    company_name: lead.company_name, industry: lead.industry, city: lead.city, state: lead.state, zip: lead.zip, source_lead_id: lead.id, status: 'active'
+                }).select();
+                if (!error && data) {
+                    await supabase.from('leads').update({ stage: 'won' }).eq('id', lead.id);
+                    await fetchAllData();
+                    setShowConvertModal(false);
+                    setSelectedItem(data[0]);
+                    setPanelType('account');
+                }
+            };
+
+            const handleAddActivity = async (type, itemId, notes, outcome) => {
+                await supabase.from('activities').insert({ activity_type: type, lead_id: itemId, notes, outcome });
+                await fetchAllData();
+            };
+
+            const handleAddPolicy = async (accountId, policyData) => {
+                await supabase.from('policies').insert({ account_id: accountId, ...policyData });
+                await fetchAllData();
+            };
+
+            const handleAddContact = async (contactData) => {
+                await supabase.from('contacts').insert(contactData);
+                await fetchAllData();
+            };
+
+            const handleUpdateLead = async (leadId, updates) => {
+                await supabase.from('leads').update(updates).eq('id', leadId);
+                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updates } : l));
+                setSelectedItem(prev => prev?.id === leadId ? { ...prev, ...updates } : prev);
+            };
+
+            const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
+
+            // Reporting Stats
+            const reportStats = useMemo(() => {
+                const now = new Date();
+                const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+                const leadsThisWeek = leads.filter(l => new Date(l.created_at) >= weekAgo).length;
+                const byStage = PIPELINE_STAGES.reduce((acc, s) => {
+                    acc[s.id] = leads.filter(l => (l.stage || 'new') === s.id).length;
+                    return acc;
+                }, {});
+                const contacted = byStage.contacted + byStage.quoted + byStage.negotiating + byStage.won + byStage.lost;
+                const quoted = byStage.quoted + byStage.negotiating + byStage.won;
+                const won = byStage.won;
+                const lost = byStage.lost;
+                const totalDecided = won + lost;
+                const conversionRate = totalDecided > 0 ? ((won / totalDecided) * 100).toFixed(1) : 0;
+                const pipelineValue = (byStage.new + byStage.contacted + byStage.quoted + byStage.negotiating) * AVG_PREMIUM;
+                const closedRevenue = policies.reduce((sum, p) => sum + (parseFloat(p.premium) || 0), 0);
+                const contactRate = leads.length > 0 ? ((contacted / leads.length) * 100).toFixed(0) : 0;
+                const quoteRate = contacted > 0 ? ((quoted / contacted) * 100).toFixed(0) : 0;
+                return { leadsThisWeek, byStage, contacted, quoted, won, lost, conversionRate, pipelineValue, closedRevenue, contactRate, quoteRate, total: leads.length };
+            }, [leads, policies]);
+
+            const filteredLeads = useMemo(() => leads.filter(l => 
+                l.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                l.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                l.industry?.toLowerCase().includes(searchTerm.toLowerCase())
+            ), [leads, searchTerm]);
+
+            if (authLoading) return <div className="h-screen flex items-center justify-center"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
+            if (!user) return <AuthScreen onLogin={setUser} />;
+            if (loading) return <div className="h-screen flex items-center justify-center"><div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    {/* Mobile Header */}
+                    <div className="mobile-header fixed top-0 left-0 right-0 h-14 bg-slate-800 text-white items-center justify-between px-4 z-40">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 ai-gradient rounded-lg flex items-center justify-center"><i className="fas fa-bolt text-sm"></i></div>
+                            <span className="font-bold">LeadFlow</span>
+                        </div>
+                        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}><i className={`fas ${mobileMenuOpen ? 'fa-times' : 'fa-bars'} text-xl`}></i></button>
+                    </div>
+
+                    {mobileMenuOpen && (
+                        <div className="mobile-nav fixed top-14 left-0 right-0 bottom-0 bg-slate-800 z-30 flex-col p-4 space-y-2">
+                            {['dashboard', 'reports', 'leadgen', 'leads', 'pipeline', 'accounts', 'policies', 'contacts'].map(v => (
+                                <button key={v} onClick={() => { setView(v); setMobileMenuOpen(false); }} className={`w-full text-left px-4 py-3 rounded-lg text-white ${view === v ? 'bg-white/20' : ''}`}>
+                                    {v.charAt(0).toUpperCase() + v.slice(1)}
+                                </button>
+                            ))}
+                            <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-red-400">Sign Out</button>
+                        </div>
+                    )}
+
+                    {/* Sidebar */}
+                    <div className="sidebar-desktop w-64 sidebar-gradient text-white flex flex-col">
+                        <div className="p-5 border-b border-white/10">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 rounded-lg ai-gradient flex items-center justify-center"><i className="fas fa-bolt"></i></div>
+                                <div>
+                                    <h1 className="font-bold text-lg">LeadFlow</h1>
+                                    <p className="text-xs text-green-400">● {user?.email?.split('@')[0]}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-1">
+                            <NavBtn icon="fa-chart-line" label="Dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                            <NavBtn icon="fa-chart-bar" label="Reports" active={view === 'reports'} onClick={() => setView('reports')} badge="NEW" />
+                            <NavBtn icon="fa-bolt" label="Lead Gen" active={view === 'leadgen'} onClick={() => setView('leadgen')} />
+                            <NavBtn icon="fa-users" label="Leads" active={view === 'leads'} onClick={() => setView('leads')} badge={leads.length} />
+                            <NavBtn icon="fa-stream" label="Pipeline" active={view === 'pipeline'} onClick={() => setView('pipeline')} />
+                            <NavBtn icon="fa-building" label="Accounts" active={view === 'accounts'} onClick={() => setView('accounts')} badge={accounts.length} />
+                            <NavBtn icon="fa-file-contract" label="Policies" active={view === 'policies'} onClick={() => setView('policies')} />
+                            <NavBtn icon="fa-address-book" label="Contacts" active={view === 'contacts'} onClick={() => setView('contacts')} />
+                        </nav>
+                        <div className="p-4 border-t border-white/10 space-y-2">
+                            <button onClick={() => setShowSettings(true)} className="w-full py-2.5 bg-green-500 hover:bg-green-600 rounded-lg text-sm font-medium flex items-center justify-center">
+                                <i className="fas fa-magic mr-2"></i>Generate Leads
+                            </button>
+                            <button onClick={handleLogout} className="w-full py-2 text-white/60 hover:text-white text-sm"><i className="fas fa-sign-out-alt mr-2"></i>Sign Out</button>
+                        </div>
+                    </div>
+
+                    {/* Main */}
+                    <div className="flex-1 flex flex-col overflow-hidden mt-14 md:mt-0">
+                        <header className="bg-white border-b px-4 md:px-6 py-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-lg md:text-xl font-bold text-gray-800 capitalize">{view}</h2>
+                                <div className="flex items-center space-x-2">
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                        <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border rounded-lg w-40 md:w-64 text-sm" />
+                                    </div>
+                                    <button onClick={fetchAllData} className="p-2 text-gray-400 hover:text-gray-600"><i className="fas fa-sync"></i></button>
+                                </div>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-auto p-4 md:p-6">
+                            {view === 'dashboard' && <DashboardView stats={reportStats} leads={leads} accounts={accounts} onSelectLead={(l) => { setSelectedItem(l); setPanelType('lead'); setShowPanel(true); }} />}
+                            {view === 'reports' && <ReportsView stats={reportStats} leads={leads} />}
+                            {view === 'leadgen' && <LeadGenView settings={settings} setSettings={setSettings} onGenerate={handleGenerateLeads} generating={generating} />}
+                            {view === 'leads' && <LeadsView leads={filteredLeads} onSelect={(l) => { setSelectedItem(l); setPanelType('lead'); setShowPanel(true); }} />}
+                            {view === 'pipeline' && <PipelineView leads={leads} onSelect={(l) => { setSelectedItem(l); setPanelType('lead'); setShowPanel(true); }} onUpdateStage={handleUpdateLeadStage} />}
+                            {view === 'accounts' && <AccountsView accounts={accounts} policies={policies} onSelect={(a) => { setSelectedItem(a); setPanelType('account'); setShowPanel(true); }} />}
+                            {view === 'policies' && <PoliciesView policies={policies} accounts={accounts} />}
+                            {view === 'contacts' && <ContactsView contacts={contacts} leads={leads} accounts={accounts} />}
+                        </main>
+                    </div>
+
+                    {showPanel && selectedItem && (
+                        <DetailPanel 
+                            item={selectedItem} type={panelType} activities={activities.filter(a => a.lead_id === selectedItem.id)}
+                            contacts={contacts.filter(c => c.lead_id === selectedItem.id || c.account_id === selectedItem.id)}
+                            policies={policies.filter(p => p.account_id === selectedItem.id)}
+                            coaching={AI_COACHING[selectedItem.lead_type] || AI_COACHING['likely_uninsured']}
+                            onClose={() => setShowPanel(false)}
+                            onAddActivity={(type, notes, outcome) => handleAddActivity(type, selectedItem.id, notes, outcome)}
+                            onConvert={() => setShowConvertModal(true)}
+                            onAddContact={handleAddContact}
+                            onAddPolicy={(data) => handleAddPolicy(selectedItem.id, data)}
+                            onUpdateStage={(stage) => handleUpdateLeadStage(selectedItem.id, stage)}
+                            onUpdateLead={handleUpdateLead}
+                        />
+                    )}
+
+                    {showSettings && <LeadGenModal settings={settings} setSettings={setSettings} onGenerate={handleGenerateLeads} onClose={() => setShowSettings(false)} generating={generating} />}
+                    {showConvertModal && selectedItem && <ConvertModal lead={selectedItem} onConvert={() => handleConvertToAccount(selectedItem)} onClose={() => setShowConvertModal(false)} />}
+                </div>
+            );
+        };
+
+        // Components
+        const NavBtn = ({ icon, label, active, onClick, badge }) => (
+            <button onClick={onClick} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${active ? 'bg-white/20' : 'hover:bg-white/10'}`}>
+                <i className={`fas ${icon} w-5`}></i><span>{label}</span>
+                {badge && <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-white/20">{badge}</span>}
+            </button>
+        );
+
+        const StatCard = ({ icon, label, value, color = 'blue', prefix = '', suffix = '' }) => (
+            <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-xs md:text-sm text-gray-500 mb-1">{label}</p>
+                        <p className="text-xl md:text-2xl font-bold text-gray-800">{prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}</p>
+                    </div>
+                    <div className={`w-10 h-10 md:w-12 md:h-12 bg-${color}-100 rounded-lg flex items-center justify-center`}>
+                        <i className={`fas ${icon} text-${color}-600`}></i>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // Dashboard
+        const DashboardView = ({ stats, leads, accounts, onSelectLead }) => (
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard icon="fa-users" label="Total Leads" value={stats.total} color="blue" />
+                    <StatCard icon="fa-phone" label="Contacted" value={stats.contacted} color="yellow" />
+                    <StatCard icon="fa-file-invoice-dollar" label="Quoted" value={stats.quoted} color="purple" />
+                    <StatCard icon="fa-trophy" label="Won" value={stats.won} color="green" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border">
+                        <div className="p-4 border-b"><h3 className="font-semibold"><i className="fas fa-fire text-red-500 mr-2"></i>Hot Leads</h3></div>
+                        <div className="divide-y">
+                            {leads.filter(l => l.priority === 'HIGH').slice(0, 5).map(lead => (
+                                <div key={lead.id} onClick={() => onSelectLead(lead)} className="p-4 hover:bg-gray-50 cursor-pointer">
+                                    <div className="flex justify-between mb-1">
+                                        <span className="font-medium text-sm truncate">{lead.company_name}</span>
+                                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{lead.priority}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500">{lead.city}, {lead.state} • {lead.industry}</p>
+                                </div>
+                            ))}
+                            {leads.filter(l => l.priority === 'HIGH').length === 0 && <div className="p-8 text-center text-gray-500">No high priority leads</div>}
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border">
+                        <div className="p-4 border-b"><h3 className="font-semibold"><i className="fas fa-chart-pie text-blue-500 mr-2"></i>Pipeline Summary</h3></div>
+                        <div className="p-4 space-y-3">
+                            {PIPELINE_STAGES.slice(0, 4).map(stage => (
+                                <div key={stage.id} className="flex items-center justify-between">
+                                    <span className="text-sm text-gray-600">{stage.name}</span>
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-32 bg-gray-200 rounded-full h-2">
+                                            <div className={`bg-${stage.color}-500 h-2 rounded-full`} style={{ width: `${stats.total > 0 ? (stats.byStage[stage.id] / stats.total * 100) : 0}%` }}></div>
+                                        </div>
+                                        <span className="text-sm font-medium w-8 text-right">{stats.byStage[stage.id]}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        // Reports
+        const ReportsView = ({ stats, leads }) => (
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <StatCard icon="fa-calendar-week" label="Leads This Week" value={stats.leadsThisWeek} color="blue" />
+                    <StatCard icon="fa-percentage" label="Contact Rate" value={stats.contactRate} color="yellow" suffix="%" />
+                    <StatCard icon="fa-file-invoice" label="Quote Rate" value={stats.quoteRate} color="purple" suffix="%" />
+                    <StatCard icon="fa-chart-line" label="Win Rate" value={stats.conversionRate} color="green" suffix="%" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border p-6">
+                        <h3 className="font-semibold mb-4"><i className="fas fa-dollar-sign text-green-500 mr-2"></i>Revenue</h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                                <span className="text-gray-600">Pipeline Value</span>
+                                <span className="text-2xl font-bold text-blue-600">${stats.pipelineValue.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-green-50 rounded-lg">
+                                <span className="text-gray-600">Closed Revenue</span>
+                                <span className="text-2xl font-bold text-green-600">${stats.closedRevenue.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border p-6">
+                        <h3 className="font-semibold mb-4"><i className="fas fa-funnel-dollar text-purple-500 mr-2"></i>Funnel</h3>
+                        <div className="space-y-3">
+                            {[
+                                { label: 'New Leads', value: stats.byStage.new, color: 'blue', width: 100 },
+                                { label: 'Contacted', value: stats.contacted, color: 'yellow', width: stats.total > 0 ? (stats.contacted / stats.total * 100) : 0 },
+                                { label: 'Quoted', value: stats.quoted, color: 'purple', width: stats.total > 0 ? (stats.quoted / stats.total * 100) : 0 },
+                                { label: 'Won', value: stats.won, color: 'green', width: stats.total > 0 ? (stats.won / stats.total * 100) : 0 },
+                            ].map(item => (
+                                <div key={item.label}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{item.label}</span>
+                                        <span className="font-medium">{item.value}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-3">
+                                        <div className={`bg-${item.color}-500 h-3 rounded-full transition-all`} style={{ width: `${item.width}%` }}></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <h3 className="font-semibold mb-4"><i className="fas fa-industry text-gray-500 mr-2"></i>Leads by Industry</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        {INDUSTRIES.slice(0, 10).map(ind => {
+                            const count = leads.filter(l => l.industry === ind).length;
+                            return (
+                                <div key={ind} className="text-center p-3 bg-gray-50 rounded-lg">
+                                    <p className="text-2xl font-bold text-gray-800">{count}</p>
+                                    <p className="text-xs text-gray-500">{ind}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        );
+
+        // Lead Gen
+        const LeadGenView = ({ settings, setSettings, onGenerate, generating }) => (
+            <div className="max-w-4xl mx-auto">
+                <div className="bg-white rounded-xl shadow-sm border p-6">
+                    <div className="flex items-center space-x-3 mb-6">
+                        <div className="w-12 h-12 ai-gradient rounded-lg flex items-center justify-center"><i className="fas fa-magic text-white text-xl"></i></div>
+                        <div><h3 className="text-lg font-bold">Lead Generation</h3><p className="text-sm text-gray-500">Configure and generate targeted leads</p></div>
+                    </div>
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-sm font-medium mb-2">States</label>
+                            <div className="flex flex-wrap gap-2">
+                                {STATES.map(s => (
+                                    <button key={s} onClick={() => setSettings({...settings, states: settings.states.includes(s) ? settings.states.filter(x => x !== s) : [...settings.states, s]})} 
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${settings.states.includes(s) ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>{s}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Industries</label>
+                            <div className="flex flex-wrap gap-2">
+                                {INDUSTRIES.map(i => (
+                                    <button key={i} onClick={() => setSettings({...settings, industries: settings.industries.includes(i) ? settings.industries.filter(x => x !== i) : [...settings.industries, i]})}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${settings.industries.includes(i) ? 'bg-green-600 text-white' : 'bg-gray-100'}`}>{i}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Signals</label>
+                            <div className="flex flex-wrap gap-2">
+                                {SIGNAL_TYPES.map(s => (
+                                    <button key={s.id} onClick={() => setSettings({...settings, signalTypes: settings.signalTypes.includes(s.id) ? settings.signalTypes.filter(x => x !== s.id) : [...settings.signalTypes, s.id]})}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${settings.signalTypes.includes(s.id) ? 'bg-purple-600 text-white' : 'bg-gray-100'}`}><i className={`fas ${s.icon} mr-1`}></i>{s.name}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Count</label>
+                            <select value={settings.leadsPerBatch} onChange={(e) => setSettings({...settings, leadsPerBatch: parseInt(e.target.value)})} className="w-full p-3 border rounded-lg">
+                                <option value={25}>25 leads</option><option value={50}>50 leads</option><option value={100}>100 leads</option><option value={200}>200 leads</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onClick={onGenerate} disabled={generating} className="w-full mt-6 py-4 ai-gradient text-white rounded-lg font-semibold text-lg disabled:opacity-50">
+                        {generating ? <><span className="animate-spin inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2"></span>Generating...</> : <><i className="fas fa-bolt mr-2"></i>Generate {settings.leadsPerBatch} Leads</>}
+                    </button>
+                </div>
+            </div>
+        );
+
+        // Leads
+        const LeadsView = ({ leads, onSelect }) => (
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="p-4 border-b"><h3 className="font-semibold">All Leads ({leads.length})</h3></div>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hide-mobile">Location</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Stage</th>
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Priority</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            {leads.map(lead => (
+                                <tr key={lead.id} onClick={() => onSelect(lead)} className="hover:bg-gray-50 cursor-pointer">
+                                    <td className="px-4 py-3"><div className="font-medium text-sm">{lead.company_name}</div><div className="text-xs text-gray-500">{lead.industry}</div></td>
+                                    <td className="px-4 py-3 text-sm text-gray-600 hide-mobile">{lead.city}, {lead.state}</td>
+                                    <td className="px-4 py-3"><span className={`text-xs px-2 py-1 rounded-full bg-${PIPELINE_STAGES.find(s => s.id === (lead.stage || 'new'))?.color || 'gray'}-100 text-${PIPELINE_STAGES.find(s => s.id === (lead.stage || 'new'))?.color || 'gray'}-700`}>{lead.stage || 'new'}</span></td>
+                                    <td className="px-4 py-3"><span className={`text-xs px-2 py-1 rounded-full ${lead.priority === 'HIGH' ? 'bg-red-100 text-red-700' : lead.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>{lead.priority}</span></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+
+        // Pipeline with Stage Updates
+        const PipelineView = ({ leads, onSelect, onUpdateStage }) => (
+            <div className="flex space-x-4 overflow-x-auto pb-4">
+                {PIPELINE_STAGES.map(stage => {
+                    const stageLeads = leads.filter(l => (l.stage || 'new') === stage.id);
+                    return (
+                        <div key={stage.id} className="flex-shrink-0 w-64 md:w-72"
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => { e.preventDefault(); const leadId = e.dataTransfer.getData('leadId'); if (leadId) onUpdateStage(leadId, stage.id); }}>
+                            <div className={`bg-${stage.color}-50 rounded-t-xl p-3 border-b-2 border-${stage.color}-200`}>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-gray-800">{stage.name}</span>
+                                    <span className="bg-white px-2 py-0.5 rounded-full text-sm">{stageLeads.length}</span>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 rounded-b-xl p-2 min-h-[400px] space-y-2">
+                                {stageLeads.map(lead => (
+                                    <div key={lead.id} draggable onDragStart={(e) => e.dataTransfer.setData('leadId', lead.id)}
+                                        onClick={() => onSelect(lead)} className="bg-white rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition">
+                                        <div className="font-medium text-sm truncate">{lead.company_name}</div>
+                                        <div className="text-xs text-gray-500 mt-1">{lead.city}, {lead.state}</div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${lead.priority === 'HIGH' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{lead.priority}</span>
+                                            <span className="text-xs text-gray-400">{lead.score}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+
+        // Accounts
+        const AccountsView = ({ accounts, policies, onSelect }) => (
+            <div className="bg-white rounded-xl shadow-sm border">
+                <div className="p-4 border-b"><h3 className="font-semibold">Accounts ({accounts.length})</h3></div>
+                {accounts.length === 0 ? (
+                    <div className="p-12 text-center"><i className="fas fa-building text-5xl text-gray-300 mb-4"></i><p className="text-gray-500">No accounts yet</p></div>
+                ) : (
+                    <div className="divide-y">
+                        {accounts.map(a => (
+                            <div key={a.id} onClick={() => onSelect(a)} className="p-4 hover:bg-gray-50 cursor-pointer">
+                                <div className="flex justify-between mb-1"><span className="font-medium">{a.company_name}</span><span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{a.status}</span></div>
+                                <p className="text-sm text-gray-500">{a.city}, {a.state} • {policies.filter(p => p.account_id === a.id).length} policies</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+
+        // Policies
+        const PoliciesView = ({ policies, accounts }) => (
+            <div className="bg-white rounded-xl shadow-sm border">
+                <div className="p-4 border-b"><h3 className="font-semibold">Policies ({policies.length})</h3></div>
+                {policies.length === 0 ? (
+                    <div className="p-12 text-center"><i className="fas fa-file-contract text-5xl text-gray-300 mb-4"></i><p className="text-gray-500">No policies yet</p></div>
+                ) : (
+                    <div className="divide-y">
+                        {policies.map(p => (
+                            <div key={p.id} className="p-4">
+                                <div className="flex justify-between"><span className="font-medium">{accounts.find(a => a.id === p.account_id)?.company_name}</span><span className="text-green-600 font-semibold">${parseFloat(p.premium || 0).toLocaleString()}</span></div>
+                                <p className="text-sm text-gray-500">{p.policy_type} • {p.carrier}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+
+        // Contacts
+        const ContactsView = ({ contacts }) => (
+            <div className="bg-white rounded-xl shadow-sm border">
+                <div className="p-4 border-b"><h3 className="font-semibold">Contacts ({contacts.length})</h3></div>
+                {contacts.length === 0 ? (
+                    <div className="p-12 text-center"><i className="fas fa-address-book text-5xl text-gray-300 mb-4"></i><p className="text-gray-500">No contacts yet</p></div>
+                ) : (
+                    <div className="divide-y">
+                        {contacts.map(c => (
+                            <div key={c.id} className="p-4">
+                                <p className="font-medium">{c.first_name} {c.last_name}</p>
+                                <p className="text-sm text-gray-500">{c.title}</p>
+                                <p className="text-sm text-blue-600">{c.email}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+
+        // Detail Panel
+        const DetailPanel = ({ item, type, activities, contacts, policies, coaching, onClose, onAddActivity, onConvert, onAddContact, onAddPolicy, onUpdateStage, onUpdateLead }) => {
+            const [tab, setTab] = useState(type === 'lead' ? 'coach' : 'details');
+            const [notes, setNotes] = useState('');
+            const [outcome, setOutcome] = useState('');
+            const [showAddContact, setShowAddContact] = useState(false);
+            const [showAddPolicy, setShowAddPolicy] = useState(false);
+            const [newContact, setNewContact] = useState({ first_name: '', last_name: '', title: '', email: '', phone: '' });
+            const [newPolicy, setNewPolicy] = useState({ policy_type: '', carrier: '', premium: '', expiration_date: '' });
+            const [editing, setEditing] = useState(false);
+            const [editData, setEditData] = useState({
+                company_name: item.company_name || '',
+                industry: item.industry || '',
+                city: item.city || '',
+                state: item.state || '',
+                phone: item.phone || '',
+                email: item.email || '',
+                priority: item.priority || 'MEDIUM',
+                employees_estimated: item.employees_estimated || '',
+                notes: item.notes || ''
+            });
+
+            const handleLog = (t) => { if (notes.trim()) { onAddActivity(t, notes, outcome); setNotes(''); setOutcome(''); } };
+            const handleSaveEdit = () => { onUpdateLead(item.id, editData); setEditing(false); };
+
+            return (
+                <div className="detail-panel w-full md:w-[400px] bg-white border-l flex flex-col">
+                    <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-700">
+                        <div className="flex justify-between mb-2"><h3 className="font-semibold text-white truncate">{item.company_name}</h3><button onClick={onClose} className="text-white/70 hover:text-white"><i className="fas fa-times"></i></button></div>
+                        <p className="text-sm text-white/70">{item.city}, {item.state}</p>
+                        {type === 'lead' && (
+                            <div className="mt-3">
+                                <select value={item.stage || 'new'} onChange={(e) => onUpdateStage(e.target.value)} className="w-full p-2 rounded text-sm text-gray-800">
+                                    {PIPELINE_STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex border-b text-xs overflow-x-auto">
+                        {type === 'lead' && <button onClick={() => setTab('coach')} className={`flex-1 px-3 py-2.5 font-medium whitespace-nowrap ${tab === 'coach' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}><i className="fas fa-robot mr-1"></i>Coach</button>}
+                        <button onClick={() => setTab('details')} className={`flex-1 px-3 py-2.5 font-medium whitespace-nowrap ${tab === 'details' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}><i className="fas fa-info-circle mr-1"></i>Details</button>
+                        <button onClick={() => setTab('activity')} className={`flex-1 px-3 py-2.5 font-medium whitespace-nowrap ${tab === 'activity' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}><i className="fas fa-history mr-1"></i>Activity</button>
+                        <button onClick={() => setTab('contacts')} className={`flex-1 px-3 py-2.5 font-medium whitespace-nowrap ${tab === 'contacts' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}><i className="fas fa-user mr-1"></i>Contacts</button>
+                        {type === 'account' && <button onClick={() => setTab('policies')} className={`flex-1 px-3 py-2.5 font-medium whitespace-nowrap ${tab === 'policies' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-gray-500'}`}><i className="fas fa-file mr-1"></i>Policies</button>}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {tab === 'coach' && coaching && (
+                            <div className="space-y-3">
+                                <div className="coach-card bg-purple-50 rounded-lg p-3"><p className="text-xs font-semibold text-purple-800 mb-1">Opening</p><p className="text-sm italic">"{coaching.opener}"</p></div>
+                                <div className="coach-card bg-blue-50 rounded-lg p-3"><p className="text-xs font-semibold text-blue-800 mb-1">Angle</p><p className="text-sm">{coaching.angle}</p></div>
+                                <div className="coach-card bg-orange-50 rounded-lg p-3"><p className="text-xs font-semibold text-orange-800 mb-1">Timing</p><p className="text-sm">{coaching.timing}</p></div>
+                                <div className="bg-white border rounded-lg overflow-hidden">
+                                    <div className="px-3 py-2 bg-gray-50 border-b text-xs font-semibold">Objections</div>
+                                    {Object.entries(coaching.objections).map(([o, r]) => (
+                                        <div key={o} className="p-3 border-b last:border-0"><p className="text-xs font-medium text-red-600 mb-1">"{o}"</p><p className="text-sm">{r}</p></div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {tab === 'details' && (
+                            <div className="space-y-4">
+                                {!editing ? (
+                                    <>
+                                        <button onClick={() => setEditing(true)} className="w-full py-2 border-2 border-blue-500 text-blue-600 rounded-lg text-sm font-medium"><i className="fas fa-edit mr-2"></i>Edit Lead</button>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div><p className="text-xs text-gray-500">Industry</p><p className="font-medium text-sm">{item.industry || '-'}</p></div>
+                                            <div><p className="text-xs text-gray-500">Employees</p><p className="font-medium text-sm">{item.employees_estimated || '-'}</p></div>
+                                            <div><p className="text-xs text-gray-500">Score</p><p className="font-medium text-sm">{item.score || '-'}</p></div>
+                                            <div><p className="text-xs text-gray-500">Priority</p><p className="font-medium text-sm">{item.priority || '-'}</p></div>
+                                            <div><p className="text-xs text-gray-500">Phone</p><p className="font-medium text-sm">{item.phone || '-'}</p></div>
+                                            <div><p className="text-xs text-gray-500">Email</p><p className="font-medium text-sm">{item.email || '-'}</p></div>
+                                            <div className="col-span-2"><p className="text-xs text-gray-500">Notes</p><p className="font-medium text-sm">{item.notes || '-'}</p></div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div><label className="text-xs text-gray-500">Company Name</label><input value={editData.company_name} onChange={(e) => setEditData({...editData, company_name: e.target.value})} className="w-full p-2 border rounded text-sm" /></div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div><label className="text-xs text-gray-500">City</label><input value={editData.city} onChange={(e) => setEditData({...editData, city: e.target.value})} className="w-full p-2 border rounded text-sm" /></div>
+                                            <div><label className="text-xs text-gray-500">State</label><input value={editData.state} onChange={(e) => setEditData({...editData, state: e.target.value})} className="w-full p-2 border rounded text-sm" /></div>
+                                        </div>
+                                        <div><label className="text-xs text-gray-500">Industry</label><select value={editData.industry} onChange={(e) => setEditData({...editData, industry: e.target.value})} className="w-full p-2 border rounded text-sm"><option value="">Select...</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></div>
+                                        <div><label className="text-xs text-gray-500">Priority</label><select value={editData.priority} onChange={(e) => setEditData({...editData, priority: e.target.value})} className="w-full p-2 border rounded text-sm"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></div>
+                                        <div><label className="text-xs text-gray-500">Employees</label><select value={editData.employees_estimated} onChange={(e) => setEditData({...editData, employees_estimated: e.target.value})} className="w-full p-2 border rounded text-sm"><option value="1-5">1-5</option><option value="5-10">5-10</option><option value="10-25">10-25</option><option value="25-50">25-50</option><option value="50-100">50-100</option><option value="100+">100+</option></select></div>
+                                        <div><label className="text-xs text-gray-500">Phone</label><input value={editData.phone} onChange={(e) => setEditData({...editData, phone: e.target.value})} className="w-full p-2 border rounded text-sm" placeholder="(555) 123-4567" /></div>
+                                        <div><label className="text-xs text-gray-500">Email</label><input value={editData.email} onChange={(e) => setEditData({...editData, email: e.target.value})} className="w-full p-2 border rounded text-sm" placeholder="contact@company.com" /></div>
+                                        <div><label className="text-xs text-gray-500">Notes</label><textarea value={editData.notes} onChange={(e) => setEditData({...editData, notes: e.target.value})} className="w-full p-2 border rounded text-sm h-20" placeholder="Add notes about this lead..." /></div>
+                                        <div className="flex space-x-2">
+                                            <button onClick={handleSaveEdit} className="flex-1 py-2 bg-green-600 text-white rounded text-sm font-medium">Save Changes</button>
+                                            <button onClick={() => setEditing(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm">Cancel</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {tab === 'activity' && (
+                            <div className="space-y-4">
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                    <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What happened?" className="w-full h-16 p-2 border rounded text-sm resize-none mb-2" />
+                                    <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="w-full p-2 border rounded text-sm mb-2">
+                                        <option value="">Outcome...</option><option value="voicemail">Voicemail</option><option value="interested">Interested</option><option value="not_interested">Not Interested</option><option value="meeting_set">Meeting Set</option>
+                                    </select>
+                                    <div className="flex space-x-2">
+                                        <button onClick={() => handleLog('call')} className="flex-1 py-2 bg-blue-600 text-white rounded text-sm">Call</button>
+                                        <button onClick={() => handleLog('email')} className="flex-1 py-2 bg-purple-600 text-white rounded text-sm">Email</button>
+                                    </div>
+                                </div>
+                                {activities.length === 0 ? <p className="text-center text-gray-500 text-sm">No activities</p> : activities.map(a => (
+                                    <div key={a.id} className="bg-gray-50 rounded p-3"><p className="text-sm font-medium capitalize">{a.activity_type}</p><p className="text-sm text-gray-600">{a.notes}</p></div>
+                                ))}
+                            </div>
+                        )}
+                        {tab === 'contacts' && (
+                            <div className="space-y-3">
+                                <button onClick={() => setShowAddContact(true)} className="w-full py-2 border-2 border-dashed rounded-lg text-gray-500 text-sm"><i className="fas fa-plus mr-1"></i>Add Contact</button>
+                                {showAddContact && (
+                                    <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                                        <div className="grid grid-cols-2 gap-2"><input placeholder="First" value={newContact.first_name} onChange={(e) => setNewContact({...newContact, first_name: e.target.value})} className="p-2 border rounded text-sm" /><input placeholder="Last" value={newContact.last_name} onChange={(e) => setNewContact({...newContact, last_name: e.target.value})} className="p-2 border rounded text-sm" /></div>
+                                        <input placeholder="Title" value={newContact.title} onChange={(e) => setNewContact({...newContact, title: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input placeholder="Email" value={newContact.email} onChange={(e) => setNewContact({...newContact, email: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input placeholder="Phone" value={newContact.phone} onChange={(e) => setNewContact({...newContact, phone: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <div className="flex space-x-2"><button onClick={() => { onAddContact({...newContact, [type === 'lead' ? 'lead_id' : 'account_id']: item.id}); setNewContact({first_name:'',last_name:'',title:'',email:'',phone:''}); setShowAddContact(false); }} className="flex-1 py-2 bg-blue-600 text-white rounded text-sm">Save</button><button onClick={() => setShowAddContact(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm">Cancel</button></div>
+                                    </div>
+                                )}
+                                {contacts.map(c => <div key={c.id} className="bg-gray-50 rounded p-3"><p className="font-medium text-sm">{c.first_name} {c.last_name}</p><p className="text-xs text-gray-500">{c.title}</p><p className="text-xs text-blue-600">{c.email}</p></div>)}
+                            </div>
+                        )}
+                        {tab === 'policies' && type === 'account' && (
+                            <div className="space-y-3">
+                                <button onClick={() => setShowAddPolicy(true)} className="w-full py-2 border-2 border-dashed rounded-lg text-gray-500 text-sm"><i className="fas fa-plus mr-1"></i>Add Policy</button>
+                                {showAddPolicy && (
+                                    <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                                        <select value={newPolicy.policy_type} onChange={(e) => setNewPolicy({...newPolicy, policy_type: e.target.value})} className="w-full p-2 border rounded text-sm"><option value="">Type...</option>{COVERAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                                        <input placeholder="Carrier" value={newPolicy.carrier} onChange={(e) => setNewPolicy({...newPolicy, carrier: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input type="number" placeholder="Premium" value={newPolicy.premium} onChange={(e) => setNewPolicy({...newPolicy, premium: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <input type="date" value={newPolicy.expiration_date} onChange={(e) => setNewPolicy({...newPolicy, expiration_date: e.target.value})} className="w-full p-2 border rounded text-sm" />
+                                        <div className="flex space-x-2"><button onClick={() => { onAddPolicy(newPolicy); setNewPolicy({policy_type:'',carrier:'',premium:'',expiration_date:''}); setShowAddPolicy(false); }} className="flex-1 py-2 bg-green-600 text-white rounded text-sm">Save</button><button onClick={() => setShowAddPolicy(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm">Cancel</button></div>
+                                    </div>
+                                )}
+                                {policies.map(p => <div key={p.id} className="bg-gray-50 rounded p-3"><div className="flex justify-between"><span className="font-medium text-sm">{p.policy_type}</span><span className="text-green-600 font-medium">${parseFloat(p.premium||0).toLocaleString()}</span></div><p className="text-xs text-gray-500">{p.carrier}</p></div>)}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-4 border-t space-y-2">
+                        {type === 'lead' && <button onClick={onConvert} className="w-full py-2.5 green-gradient text-white rounded-lg font-medium text-sm"><i className="fas fa-check-circle mr-2"></i>Convert to Account</button>}
+                        <button className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm"><i className="fas fa-phone mr-2"></i>Call Now</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // Modals
+        const LeadGenModal = ({ settings, setSettings, onGenerate, onClose, generating }) => (
+            <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+                    <div className="p-4 border-b flex justify-between items-center"><h3 className="text-lg font-bold">Generate Leads</h3><button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times"></i></button></div>
+                    <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+                        <div><label className="block text-sm font-medium mb-2">States</label><div className="flex flex-wrap gap-2">{STATES.map(s => <button key={s} onClick={() => setSettings({...settings, states: settings.states.includes(s) ? settings.states.filter(x => x !== s) : [...settings.states, s]})} className={`px-3 py-1 rounded text-sm ${settings.states.includes(s) ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>{s}</button>)}</div></div>
+                        <div><label className="block text-sm font-medium mb-2">Industries</label><div className="flex flex-wrap gap-2">{INDUSTRIES.map(i => <button key={i} onClick={() => setSettings({...settings, industries: settings.industries.includes(i) ? settings.industries.filter(x => x !== i) : [...settings.industries, i]})} className={`px-3 py-1 rounded text-sm ${settings.industries.includes(i) ? 'bg-green-600 text-white' : 'bg-gray-100'}`}>{i}</button>)}</div></div>
+                        <div><label className="block text-sm font-medium mb-2">Count</label><select value={settings.leadsPerBatch} onChange={(e) => setSettings({...settings, leadsPerBatch: parseInt(e.target.value)})} className="w-full p-2 border rounded"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option></select></div>
+                    </div>
+                    <div className="p-4 border-t"><button onClick={onGenerate} disabled={generating} className="w-full py-3 ai-gradient text-white rounded-lg font-semibold disabled:opacity-50">{generating ? 'Generating...' : `Generate ${settings.leadsPerBatch} Leads`}</button></div>
+                </div>
+            </div>
+        );
+
+        const ConvertModal = ({ lead, onConvert, onClose }) => (
+            <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                    <h3 className="text-lg font-bold mb-4">Convert to Account</h3>
+                    <p className="text-gray-600 mb-6">Convert <strong>{lead.company_name}</strong> to an active account?</p>
+                    <div className="flex space-x-3"><button onClick={onConvert} className="flex-1 py-3 green-gradient text-white rounded-lg font-semibold">Convert</button><button onClick={onClose} className="flex-1 py-3 bg-gray-200 rounded-lg font-semibold">Cancel</button></div>
+                </div>
+            </div>
+        );
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
