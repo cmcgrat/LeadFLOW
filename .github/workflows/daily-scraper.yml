@@ -20,6 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          cd leadflow_scrapers
           pip install -r requirements.txt
 
       - name: Run scrapers
@@ -27,4 +28,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
+          cd leadflow_scrapers
           python daily_scraper.py
